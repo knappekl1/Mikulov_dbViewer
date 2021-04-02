@@ -8,39 +8,53 @@ import json
 import os
 from datetime import datetime
 
-#get db from HEROKU into DataFrame
-#load config
-configPath = "config.json"
+def getDbData():
+    #get db from HEROKU into DataFrame
+    #load config
+    configPath = "config.json"
 
-#print(os.path.abspath(configPath))
+    #print(os.path.abspath(configPath))
 
-with open (configPath,"r") as file:
-    configObj = json.load(file)
+    with open (configPath,"r") as file:
+        configObj = json.load(file)
 
-engineString = f'postgresql+psycopg2://{configObj["userName"]}:{configObj["password"]}@{configObj["hostName"]}/{configObj["databaseName"]}'
-engine = create_engine(engineString)
+    engineString = f'postgresql+psycopg2://{configObj["userName"]}:{configObj["password"]}@{configObj["hostName"]}/{configObj["databaseName"]}'
+    engine = create_engine(engineString)
 
-#fetch data from DB
-with engine.connect() as conn:
-    query = "REFRESH MATERIALIZED VIEW day_ma7;"
-    conn.execute(query)
-    selectQuery = "SELECT * FROM day_ma7"
-    result = conn.execute(selectQuery).fetchall()
+    #fetch data from DB
+    with engine.connect() as conn:
+        query = "REFRESH MATERIALIZED VIEW day_ma7;"
+        conn.execute(query)
+        selectQuery = "SELECT * FROM day_ma7"
+        result = conn.execute(selectQuery).fetchall()
+        maxDateQuery = "SELECT MAX(item_date) FROM day_ma7"
+        maxDate = conn.execute(maxDateQuery).fetchall()
+        return {"result":result, "maxDate":maxDate}
 
-#Create DataFrame from DB Data (cannot use pd.read_sql directly as it does not support reading from View)
-df = pd.DataFrame(data = result, columns = ["item_date", "consumption","ma7"])
-df["item_date"] = pd.to_datetime(df["item_date"])
-df = df.sort_values("item_date")
-#Create DF with top 5 values
-dfMax = df.sort_values("consumption", ascending=False)[:5]
-#Create DF with last 30 values, ascending
-df30 = df[-30:]
+def ProcessData(queryResult):
+    #Create DataFrame from DB Data (cannot use pd.read_sql directly as it does not support reading from View)
+    df = pd.DataFrame(data = queryResult, columns = ["item_date", "consumption","ma7"])
+    df["item_date"] = pd.to_datetime(df["item_date"])
+    df = df.sort_values("item_date")
+    #Create DF with top 5 values
+    dfMax = df.sort_values("consumption", ascending=False)[:5]
+    #Create DF with last 30 values, ascending
+    df30 = df[-30:]
+    return (df, dfMax, df30)
 
+#Get and process data
 
+DataDict = getDbData()
+maxDate = DataDict["maxDate"]
+dfList = ProcessData(DataDict["result"])
+df = dfList[0]
+dfMax = dfList[1]
+df30 = dfList[2]
+
+#Process data for plotting
 myData = []
 for val in dfMax[["item_date","consumption"]].itertuples():
     myData.append([val[1].strftime('%d.%m.%Y'),val[2]])
-
 
 
 fig = plt.figure(figsize=(18,8))
